@@ -1,0 +1,149 @@
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/main/source.lua"))()
+local Window = Library.CreateLib("Palm Hub", "BloodTheme")
+
+----------------------------------------------------------------
+-- 🔧 TAB ตั้งค่า
+----------------------------------------------------------------
+local Tab = Window:NewTab("ตั้งค่า")
+local Section = Tab:NewSection("การตั้งค่า")
+
+-- ความเร็วในการเดิน
+Section:NewTextBox("Workspeed", "ความเร็วในการเคลื่อนที่", function(txt)
+	game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = txt
+end)
+
+-- ความสูงในการกระโดด
+Section:NewTextBox("JumpPower", "ความกระโดดสูง", function(txt)
+	game.Players.LocalPlayer.Character.Humanoid.JumpPower = txt
+end)
+
+----------------------------------------------------------------
+-- 🌈 Highlight + ชื่อผู้เล่น (ย้ายมาใน Setting)
+----------------------------------------------------------------
+local Players = game:GetService("Players")
+
+Section:NewToggle("Highlight + ชื่อผู้เล่น", "เปิดหรือปิดออร่าและชื่อผู้เล่น", function(state)
+	if state then
+		print("Highlight On")
+		for _,v in pairs(Players:GetPlayers()) do
+			if v.Character then
+				-- เพิ่ม Highlight
+				if not v.Character:FindFirstChild("Highlight") then
+					local h = Instance.new("Highlight", v.Character)
+					h.FillColor = Color3.fromRGB(0, 255, 255)
+					h.FillTransparency = 0.5
+				end
+				-- เพิ่ม BillboardGui แสดงชื่อ
+				if not v.Character:FindFirstChild("NameDisplay") then
+					local bill = Instance.new("BillboardGui", v.Character)
+					bill.Name = "NameDisplay"
+					bill.Size = UDim2.new(0, 200, 0, 50)
+					bill.AlwaysOnTop = true
+					bill.MaxDistance = math.huge
+					bill.StudsOffset = Vector3.new(0, 3, 0)
+
+					local text = Instance.new("TextLabel", bill)
+					text.Size = UDim2.new(1, 0, 1, 0)
+					text.BackgroundTransparency = 1
+					text.Text = v.DisplayName .. " (" .. v.Name .. ")"
+					text.TextColor3 = Color3.fromRGB(0, 255, 255)
+					text.TextStrokeTransparency = 0
+					text.TextScaled = true
+					text.Font = Enum.Font.GothamBold
+				end
+			end
+
+			-- เมื่อผู้เล่นเกิดใหม่
+			v.CharacterAdded:Connect(function(c)
+				task.wait(1)
+				if state then
+					local h = Instance.new("Highlight", c)
+					h.FillColor = Color3.fromRGB(0, 255, 255)
+					h.FillTransparency = 0.5
+
+					local bill = Instance.new("BillboardGui", c)
+					bill.Name = "NameDisplay"
+					bill.Size = UDim2.new(0, 200, 0, 50)
+					bill.AlwaysOnTop = true
+					bill.MaxDistance = math.huge
+					bill.StudsOffset = Vector3.new(0, 3, 0)
+
+					local text = Instance.new("TextLabel", bill)
+					text.Size = UDim2.new(1, 0, 1, 0)
+					text.BackgroundTransparency = 1
+					text.Text = v.DisplayName .. " (" .. v.Name .. ")"
+					text.TextColor3 = Color3.fromRGB(0, 255, 255)
+					text.TextStrokeTransparency = 0
+					text.TextScaled = true
+					text.Font = Enum.Font.GothamBold
+				end
+			end)
+		end
+	else
+		print("Highlight Off")
+		for _,v in pairs(Players:GetPlayers()) do
+			if v.Character then
+				if v.Character:FindFirstChild("Highlight") then
+					v.Character.Highlight:Destroy()
+				end
+				if v.Character:FindFirstChild("NameDisplay") then
+					v.Character.NameDisplay:Destroy()
+				end
+			end
+		end
+	end
+end)
+
+----------------------------------------------------------------
+-- 🧭 ปุ่มเปิด/ปิดเมนู (รองรับมือถือ)
+----------------------------------------------------------------
+local player = game.Players.LocalPlayer
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "MenuToggleGUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Parent = screenGui
+toggleBtn.Size = UDim2.new(0, 120, 0, 50)
+toggleBtn.Position = UDim2.new(0.05, 0, 0.85, 0)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleBtn.Font = Enum.Font.SourceSansBold
+toggleBtn.TextSize = 22
+toggleBtn.Text = "ปิดเมนู"
+toggleBtn.Active = true
+toggleBtn.Draggable = true
+
+local function findKavoMain()
+	for _, gui in pairs(game.CoreGui:GetChildren()) do
+		if gui:IsA("ScreenGui") and gui:FindFirstChild("Main") then
+			return gui.Main
+		end
+	end
+end
+
+local uiVisible = true
+toggleBtn.MouseButton1Click:Connect(function()
+	local kavoUI = findKavoMain()
+	if not kavoUI then
+		warn("ไม่พบ Kavo UI")
+		return
+	end
+	uiVisible = not uiVisible
+	kavoUI.Parent.Enabled = uiVisible
+	toggleBtn.Text = uiVisible and "ปิดเมนู" or "เปิดเมนู"
+end)
+
+----------------------------------------------------------------
+-- 🖐️ เมนูหลักลากได้
+----------------------------------------------------------------
+task.wait(1)
+local mainFrame = findKavoMain()
+if mainFrame then
+	mainFrame.Active = true
+	mainFrame.Draggable = true
+	print("✅ My Menu ลากได้แล้ว!")
+else
+	warn("⚠️ ไม่พบ Main Frame ของ Kavo UI")
+end
