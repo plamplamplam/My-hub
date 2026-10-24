@@ -1,0 +1,743 @@
+-- LocalScript
+-- วางที่: StarterPlayer > StarterPlayerScripts
+-- กด F เพื่อเปิด/ปิด หรือกดปุ่ม 📁 มุมซ้ายล่างตอนปิดหน้าต่าง
+-- ถ้ามี FileManagerSaver (Script ฝั่งเซิร์ฟเวอร์) จะเซฟอัตโนมัติ ถ้าไม่มีจะใช้ได้แค่ตอนอยู่ในเกม
+
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local camera = workspace.CurrentCamera
+
+---------------------------------------------------------------------
+-- สี: เหลืองอ่อนใส + น้ำตาล + ขาว
+---------------------------------------------------------------------
+local WHITE   = Color3.fromRGB(255, 255, 255)
+local BG      = Color3.fromRGB(255, 253, 245)
+local TINT    = Color3.fromRGB(255, 246, 214)
+local TINT2   = Color3.fromRGB(255, 239, 184)
+local LINE    = Color3.fromRGB(241, 230, 196)
+local INK     = Color3.fromRGB(90, 62, 37)
+local INK2    = Color3.fromRGB(154, 129, 104)
+local BROWN   = Color3.fromRGB(138, 90, 50)
+local DARK    = Color3.fromRGB(74, 48, 26)
+local FOLDER  = Color3.fromRGB(245, 207, 99)
+local FOLDER2 = Color3.fromRGB(251, 227, 143)
+local EDGE    = Color3.fromRGB(214, 170, 70)
+
+local ICONS = {
+	"", "💾", "🏠", "📁", "⭐", "🎮", "🎵", "🖼️", "💼", "🔒",
+	"☁️", "📦", "🔧", "❤️", "🚀", "📷", "🎒", "🔑", "🏆", "⚙️",
+}
+
+---------------------------------------------------------------------
+-- ข้อมูล: เริ่มต้นว่างเปล่า
+-- โฟลเดอร์ { t="f", name, icon, kids }  |  ไฟล์ { t="d", name, content }
+-- ไฟล์ต้องอยู่ในโฟลเดอร์เท่านั้น (ชั้นบนสุดมีได้แต่โฟลเดอร์)
+---------------------------------------------------------------------
+local root = { t = "f", name = "ไฟล์ของฉัน", kids = {} }
+local path = { root }
+local query = ""
+
+-- false = ใช้ LocalScript ตัวเดียว ไม่ต้องมี Script ฝั่งเซิร์ฟเวอร์เลย (ข้อมูลอยู่ถึงออกเกม)
+local USE_SERVER_SAVE = false
+
+local remote = nil
+local canSave = false
+local dirty = false
+
+---------------------------------------------------------------------
+-- ตัวช่วย
+---------------------------------------------------------------------
+local function make(class, props, parent)
+	local obj = Instance.new(class)
+	for k, v in pairs(props) do obj[k] = v end
+	obj.Parent = parent
+	return obj
+end
+
+local function box(props, parent)
+	props.BorderSizePixel = 0
+	return make("Frame", props, parent)
+end
+
+local function label(props, parent)
+	props.BackgroundTransparency = props.BackgroundTransparency or 1
+	props.BorderSizePixel = 0
+	props.Font = props.Font or Enum.Font.SourceSans
+	props.TextColor3 = props.TextColor3 or INK
+	return make("TextLabel", props, parent)
+end
+
+local function stroke(parent, color, thickness)
+	return make("UIStroke", {
+		Color = color,
+		Thickness = thickness or 1,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+	}, parent)
+end
+
+local function tween(obj, t, props)
+	TweenService:Create(obj, TweenInfo.new(t, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+end
+
+local function trim(s)
+	return (string.gsub(s, "^%s*(.-)%s*$", "%1"))
+end
+
+local function button(parent, text, size, pos, base, hover, textColor)
+	local b = make("TextButton", {
+		Size = size, Position = pos,
+		BackgroundColor3 = base, BorderSizePixel = 0,
+		Text = text, TextColor3 = textColor or INK, TextSize = 16,
+		Font = Enum.Font.SourceSansBold, AutoButtonColor = false,
+	}, parent)
+	b.MouseEnter:Connect(function() tween(b, 0.12, { BackgroundColor3 = hover }) end)
+	b.MouseLeave:Connect(function() tween(b, 0.12, { BackgroundColor3 = base }) end)
+	return b
+end
+
+local function textField(parent, pos, size, placeholder, text)
+	local tb = make("TextBox", {
+		Position = pos, Size = size,
+		BackgroundColor3 = WHITE, BorderSizePixel = 0,
+		Text = text or "", PlaceholderText = placeholder, PlaceholderColor3 = INK2,
+		TextColor3 = INK, TextSize = 17, Font = Enum.Font.SourceSans,
+		ClearTextOnFocus = false, TextXAlignment = Enum.TextXAlignment.Left,
+	}, parent)
+	make("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) }, tb)
+	local s = stroke(tb, LINE, 1.5)
+	tb.Focused:Connect(function() s.Color = BROWN end)
+	tb.FocusLost:Connect(function() s.Color = LINE end)
+	return tb
+end
+
+---------------------------------------------------------------------
+-- หน้าต่างลอย (ลากได้) : สี่เหลี่ยมผืนผ้าแนวนอน
+---------------------------------------------------------------------
+local gui = make("ScreenGui", {
+	Name = "FileManagerGui",
+	ResetOnSpawn = false,
+	IgnoreGuiInset = true,
+	DisplayOrder = 50,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+}, playerGui)
+
+local vp = camera.ViewportSize
+local W = math.min(840, vp.X - 24)
+local H = math.min(470, vp.Y - 24)
+
+local win = make("Frame", {
+	Name = "Window",
+	Size = UDim2.fromOffset(W, H),
+	Position = UDim2.fromOffset((vp.X - W) / 2, (vp.Y - H) / 2),
+	BackgroundTransparency = 1,
+}, gui)
+
+-- เงาแข็งเยื้องมุม ให้ดูเท่
+box({ Position = UDim2.fromOffset(7, 7), Size = UDim2.fromScale(1, 1), BackgroundColor3 = DARK, BackgroundTransparency = 0.72 }, win)
+
+local main = box({ Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, ClipsDescendants = true }, win)
+stroke(main, DARK, 2)
+
+-- แถบหัว (ลากตรงนี้เพื่อย้ายหน้าต่าง)
+local titleBar = box({ Size = UDim2.new(1, 0, 0, 42), BackgroundColor3 = BROWN }, main)
+box({ Position = UDim2.new(0, 0, 1, -3), Size = UDim2.new(1, 0, 0, 3), BackgroundColor3 = FOLDER }, titleBar)
+box({ Position = UDim2.fromOffset(12, 11), Size = UDim2.fromOffset(10, 18), BackgroundColor3 = FOLDER }, titleBar)
+label({
+	Position = UDim2.fromOffset(32, 0), Size = UDim2.new(1, -250, 0, 39),
+	Text = "คลังไฟล์ของฉัน", TextSize = 21, Font = Enum.Font.SourceSansBold,
+	TextColor3 = WHITE, TextXAlignment = Enum.TextXAlignment.Left,
+}, titleBar)
+local statusLabel = label({
+	AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -50, 0, 0), Size = UDim2.fromOffset(190, 39),
+	Text = "", TextSize = 14, TextColor3 = TINT2, TextXAlignment = Enum.TextXAlignment.Right,
+}, titleBar)
+local closeBtn = button(titleBar, "X", UDim2.fromOffset(28, 28), UDim2.new(1, -38, 0, 5), DARK, FOLDER, WHITE)
+
+local function setStatus(text, color)
+	statusLabel.Text = text
+	statusLabel.TextColor3 = color or TINT2
+end
+
+-- แถบเครื่องมือ
+local bar = box({ Position = UDim2.fromOffset(0, 42), Size = UDim2.new(1, 0, 0, 48), BackgroundColor3 = BG }, main)
+box({ Position = UDim2.new(0, 0, 1, -1), Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = LINE }, bar)
+
+local backBtn = button(bar, "<", UDim2.fromOffset(34, 30), UDim2.fromOffset(12, 9), TINT, TINT2, BROWN)
+stroke(backBtn, LINE, 1)
+
+local searchW = (W < 560) and 110 or 180
+local crumb = label({
+	Position = UDim2.fromOffset(14, 0), Size = UDim2.new(1, -(116 + searchW + 66), 1, 0),
+	TextSize = 18, Font = Enum.Font.SourceSansSemibold, TextColor3 = BROWN,
+	TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Text = "",
+}, bar)
+
+local searchBox = textField(bar, UDim2.new(1, -(104 + searchW + 12), 0, 9), UDim2.fromOffset(searchW, 30), "ค้นหา", "")
+local addBtn = button(bar, "+ เพิ่ม", UDim2.fromOffset(92, 30), UDim2.new(1, -104, 0, 9), BROWN, DARK, WHITE)
+
+-- พื้นที่แสดงแฟ้ม/ไฟล์
+local scroll = make("ScrollingFrame", {
+	Position = UDim2.fromOffset(0, 90), Size = UDim2.new(1, 0, 1, -90),
+	BackgroundColor3 = WHITE, BorderSizePixel = 0,
+	ScrollBarThickness = 6, ScrollBarImageColor3 = FOLDER,
+	CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+}, main)
+make("UIPadding", {
+	PaddingLeft = UDim.new(0, 16), PaddingRight = UDim.new(0, 16),
+	PaddingTop = UDim.new(0, 14), PaddingBottom = UDim.new(0, 18),
+}, scroll)
+make("UIGridLayout", {
+	CellSize = UDim2.fromOffset(156, 150),
+	CellPadding = UDim2.fromOffset(12, 12),
+	SortOrder = Enum.SortOrder.LayoutOrder,
+}, scroll)
+
+local emptyLabel = label({
+	AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.6, 0),
+	Size = UDim2.new(1, -40, 0, 60), Text = "", TextSize = 19, TextColor3 = INK2,
+	TextWrapped = true, Visible = false,
+}, main)
+
+-- ป้ายแจ้งเตือนเล็กๆ
+local toastLabel = label({
+	AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -14),
+	Size = UDim2.fromOffset(math.min(430, W - 24), 32),
+	BackgroundColor3 = DARK, BackgroundTransparency = 1,
+	Text = "", TextSize = 16, TextColor3 = WHITE, TextTransparency = 1, ZIndex = 100,
+}, main)
+local toastId = 0
+local function toast(msg)
+	toastId += 1
+	local id = toastId
+	toastLabel.Text = msg
+	toastLabel.BackgroundTransparency = 0.05
+	toastLabel.TextTransparency = 0
+	task.delay(2.4, function()
+		if id == toastId then
+			tween(toastLabel, 0.3, { BackgroundTransparency = 1, TextTransparency = 1 })
+		end
+	end)
+end
+
+-- ปุ่มเปิดหน้าต่างเมื่อปิดอยู่
+local launcher = button(gui, "📁", UDim2.fromOffset(48, 48), UDim2.new(0, 16, 1, -64), BROWN, DARK, FOLDER)
+launcher.TextSize = 26
+launcher.Visible = false
+stroke(launcher, FOLDER, 2)
+
+---------------------------------------------------------------------
+-- ลากหน้าต่าง
+---------------------------------------------------------------------
+do
+	local dragging, dragStart, startPos = false, nil, nil
+	titleBar.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = win.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then dragging = false end
+			end)
+		end
+	end)
+	UIS.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local d = input.Position - dragStart
+			local v = camera.ViewportSize
+			local x = math.clamp(startPos.X.Offset + d.X, -(W - 120), v.X - 120)
+			local y = math.clamp(startPos.Y.Offset + d.Y, 0, v.Y - 44)
+			win.Position = UDim2.fromOffset(x, y)
+		end
+	end)
+end
+
+---------------------------------------------------------------------
+-- เซฟ/โหลด (คุยกับ Script เซฟของแต่ละคน ผ่าน RemoteFunction)
+---------------------------------------------------------------------
+local function markDirty()
+	dirty = true
+	if canSave then setStatus("มีการเปลี่ยนแปลง…") end
+end
+
+local function flush()
+	if not (canSave and dirty and remote) then return end
+	dirty = false
+	setStatus("กำลังบันทึก…")
+	local ok, res = pcall(function()
+		return remote:InvokeServer("save", HttpService:JSONEncode(root.kids))
+	end)
+	if ok and res then
+		setStatus("● บันทึกแล้ว", Color3.fromRGB(190, 230, 140))
+	else
+		dirty = true
+		setStatus("บันทึกไม่สำเร็จ ลองใหม่…", Color3.fromRGB(255, 190, 150))
+	end
+end
+
+task.spawn(function()
+	while true do
+		task.wait(2)
+		flush()
+	end
+end)
+
+-- ล้างข้อมูลที่โหลดมาให้อยู่ในรูปแบบที่ถูกต้อง
+local function clean(node, depth)
+	if type(node) ~= "table" or depth > 40 then return nil end
+	local n = { t = (node.t == "f") and "f" or "d", name = string.sub(tostring(node.name or "ไม่มีชื่อ"), 1, 40) }
+	if n.t == "f" then
+		n.icon = type(node.icon) == "string" and string.sub(node.icon, 1, 40) or ""
+		n.kids = {}
+		if type(node.kids) == "table" then
+			for _, k in ipairs(node.kids) do
+				local c = clean(k, depth + 1)
+				if c then table.insert(n.kids, c) end
+			end
+		end
+	else
+		n.content = type(node.content) == "string" and node.content or ""
+	end
+	return n
+end
+
+---------------------------------------------------------------------
+-- หน้าต่างย่อย (Modal)
+---------------------------------------------------------------------
+local overlay = nil
+local function closeModal()
+	if overlay then overlay:Destroy() overlay = nil end
+end
+
+local function openModal(titleText, w, h)
+	closeModal()
+	overlay = make("TextButton", {
+		Size = UDim2.fromScale(1, 1), BackgroundColor3 = DARK, BackgroundTransparency = 0.5,
+		BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 50,
+	}, main)
+	local pw, ph = math.min(w, W - 24), math.min(h, H - 24)
+	local panel = box({
+		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 14),
+		Size = UDim2.fromOffset(pw, ph), BackgroundColor3 = WHITE,
+	}, overlay)
+	stroke(panel, DARK, 2)
+	local head = box({ Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = TINT2 }, panel)
+	box({ Position = UDim2.new(0, 0, 1, -3), Size = UDim2.new(1, 0, 0, 3), BackgroundColor3 = FOLDER }, head)
+	label({
+		Position = UDim2.fromOffset(14, 0), Size = UDim2.new(1, -28, 0, 33), Text = titleText,
+		TextSize = 19, Font = Enum.Font.SourceSansBold, TextColor3 = BROWN,
+		TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+	}, head)
+	tween(panel, 0.15, { Position = UDim2.fromScale(0.5, 0.5) })
+	return panel, pw, ph
+end
+
+local function smallLabel(panel, y, text)
+	return label({
+		Position = UDim2.fromOffset(14, y), Size = UDim2.new(1, -28, 0, 20), Text = text,
+		TextSize = 16, TextColor3 = INK2, TextXAlignment = Enum.TextXAlignment.Left,
+	}, panel)
+end
+
+local function confirmDialog(text, onYes)
+	local panel, pw, ph = openModal("ยืนยัน", 380, 160)
+	label({
+		Position = UDim2.fromOffset(14, 46), Size = UDim2.new(1, -28, 0, 56), Text = text,
+		TextSize = 18, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+	}, panel)
+	local no = button(panel, "ยกเลิก", UDim2.fromOffset(96, 34), UDim2.new(1, -214, 1, -46), TINT, TINT2, BROWN)
+	local yes = button(panel, "ลบ", UDim2.fromOffset(96, 34), UDim2.new(1, -110, 1, -46), BROWN, DARK, WHITE)
+	stroke(no, LINE, 1)
+	no.MouseButton1Click:Connect(closeModal)
+	yes.MouseButton1Click:Connect(function()
+		closeModal()
+		onYes()
+	end)
+end
+
+-- สร้าง/แก้ไขแฟ้ม: ตั้งชื่อ + เลือกรูป
+local function folderDialog(existing, onDone)
+	local panel, pw, ph = openModal(existing and "แก้ไขแฟ้ม" or "สร้างแฟ้มใหม่", 440, 372)
+
+	smallLabel(panel, 44, "ชื่อแฟ้ม")
+	local nameBox = textField(panel, UDim2.fromOffset(14, 66), UDim2.new(1, -28, 0, 34), "ตั้งชื่อแฟ้ม", existing and existing.name or "")
+
+	smallLabel(panel, 110, "เลือกรูปแฟ้ม (flash drive, บ้าน ฯลฯ)")
+	local chosen = existing and existing.icon or ""
+	local digits = string.match(chosen, "^rbxassetid://(%d+)$")
+
+	smallLabel(panel, 232, "หรือใส่ ID รูปจาก Roblox (ตัวเลข)")
+	local idBox = textField(panel, UDim2.fromOffset(14, 254), UDim2.new(1, -28, 0, 32), "เช่น 123456789", digits or "")
+
+	local grid = make("ScrollingFrame", {
+		Position = UDim2.fromOffset(14, 134), Size = UDim2.new(1, -28, 0, 90),
+		BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 4,
+		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	}, panel)
+	make("UIGridLayout", { CellSize = UDim2.fromOffset(36, 36), CellPadding = UDim2.fromOffset(4, 4), SortOrder = Enum.SortOrder.LayoutOrder }, grid)
+
+	local btns = {}
+	local function refresh()
+		for ic, b in pairs(btns) do
+			b.BackgroundColor3 = (ic == chosen and idBox.Text == "") and FOLDER or TINT
+		end
+	end
+	for i, ic in ipairs(ICONS) do
+		local b = make("TextButton", {
+			LayoutOrder = i, BackgroundColor3 = TINT, BorderSizePixel = 0,
+			Text = (ic == "") and "–" or ic, TextSize = 22, TextColor3 = INK,
+			Font = Enum.Font.SourceSans, AutoButtonColor = false,
+		}, grid)
+		btns[ic] = b
+		b.MouseButton1Click:Connect(function()
+			chosen = ic
+			idBox.Text = ""
+			refresh()
+		end)
+	end
+	idBox:GetPropertyChangedSignal("Text"):Connect(refresh)
+	refresh()
+
+	local cancel = button(panel, "ยกเลิก", UDim2.fromOffset(100, 36), UDim2.new(1, -226, 1, -48), TINT, TINT2, BROWN)
+	local ok = button(panel, "ตกลง", UDim2.fromOffset(100, 36), UDim2.new(1, -114, 1, -48), BROWN, DARK, WHITE)
+	stroke(cancel, LINE, 1)
+	cancel.MouseButton1Click:Connect(closeModal)
+	ok.MouseButton1Click:Connect(function()
+		local name = string.sub(trim(nameBox.Text), 1, 40)
+		if name == "" then name = "แฟ้มใหม่" end
+		local d = string.match(idBox.Text, "%d+")
+		local icon = d and ("rbxassetid://" .. d) or chosen
+		closeModal()
+		onDone(name, icon)
+	end)
+end
+
+-- สร้าง/เปิดไฟล์: ตั้งชื่อ + เขียนเนื้อหา + ปุ่มคัดลอก
+local function fileDialog(existing, onDone)
+	local panel, pw, ph = openModal(existing and ("ไฟล์: " .. existing.name) or "สร้างไฟล์ใหม่", 580, 390)
+
+	smallLabel(panel, 44, "ชื่อไฟล์ (ใส่นามสกุลได้ เช่น note.txt)")
+	local nameBox = textField(panel, UDim2.fromOffset(14, 66), UDim2.new(1, -28, 0, 34), "ชื่อไฟล์", existing and existing.name or "")
+
+	local area = make("ScrollingFrame", {
+		Position = UDim2.fromOffset(14, 110), Size = UDim2.new(1, -28, 1, -110 - 58),
+		BackgroundColor3 = BG, BorderSizePixel = 0, ScrollBarThickness = 5, ScrollBarImageColor3 = FOLDER,
+		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	}, panel)
+	stroke(area, LINE, 1.5)
+	local content = make("TextBox", {
+		Size = UDim2.new(1, 0, 0, 150), AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1, BorderSizePixel = 0,
+		Text = existing and existing.content or "", PlaceholderText = "พิมพ์เนื้อหาในไฟล์ที่นี่…", PlaceholderColor3 = INK2,
+		TextColor3 = INK, TextSize = 17, Font = Enum.Font.Code,
+		MultiLine = true, TextWrapped = true, ClearTextOnFocus = false,
+		TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+	}, area)
+	make("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8), PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6) }, content)
+
+	local copy = button(panel, "คัดลอก", UDim2.fromOffset(100, 36), UDim2.new(0, 14, 1, -48), TINT2, FOLDER, BROWN)
+	stroke(copy, EDGE, 1)
+	local cancel = button(panel, "ปิด", UDim2.fromOffset(90, 36), UDim2.new(1, -208, 1, -48), TINT, TINT2, BROWN)
+	local save = button(panel, "บันทึก", UDim2.fromOffset(94, 36), UDim2.new(1, -108, 1, -48), BROWN, DARK, WHITE)
+	stroke(cancel, LINE, 1)
+
+	copy.MouseButton1Click:Connect(function()
+		-- Roblox ไม่ให้สคริปต์ตั้งค่า clipboard เอง จึงเลือกข้อความทั้งหมดให้ แล้วผู้เล่นกด Ctrl+C
+		content:CaptureFocus()
+		content.CursorPosition = #content.Text + 1
+		content.SelectionStart = 1
+		toast("เลือกข้อความทั้งหมดแล้ว กด Ctrl+C เพื่อคัดลอก")
+	end)
+	cancel.MouseButton1Click:Connect(closeModal)
+	save.MouseButton1Click:Connect(function()
+		local name = string.sub(trim(nameBox.Text), 1, 40)
+		if name == "" then name = "ไฟล์ใหม่" end
+		if not string.find(name, "%.%w+$") then name = name .. ".txt" end
+		local text = content.Text
+		closeModal()
+		onDone(name, text)
+	end)
+end
+
+---------------------------------------------------------------------
+-- วาดแฟ้ม / ไฟล์
+---------------------------------------------------------------------
+local function drawIcon(parent, icon, size, cx, cy)
+	if icon == nil or icon == "" then return end
+	if string.sub(icon, 1, 13) == "rbxassetid://" then
+		make("ImageLabel", {
+			AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(cx, cy), Size = UDim2.fromOffset(size, size),
+			BackgroundTransparency = 1, BorderSizePixel = 0, Image = icon, ScaleType = Enum.ScaleType.Fit,
+		}, parent)
+	else
+		label({
+			AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(cx, cy), Size = UDim2.fromOffset(size + 10, size + 10),
+			Text = icon, TextSize = size,
+		}, parent)
+	end
+end
+
+local function drawFolder(parent, icon)
+	local tab = box({ Position = UDim2.fromOffset(18, 12), Size = UDim2.fromOffset(54, 20), BackgroundColor3 = FOLDER }, parent)
+	stroke(tab, EDGE, 1.5)
+	local back = box({ Position = UDim2.fromOffset(18, 26), Size = UDim2.fromOffset(120, 88), BackgroundColor3 = FOLDER }, parent)
+	stroke(back, EDGE, 1.5)
+	local front = box({ Position = UDim2.fromOffset(18, 40), Size = UDim2.fromOffset(120, 74), BackgroundColor3 = FOLDER2 }, parent)
+	stroke(front, EDGE, 1.5)
+	drawIcon(parent, icon, 38, 78, 78)
+end
+
+local function extOf(name)
+	local e = string.match(name, "%.(%w+)$")
+	return e and string.upper(string.sub(e, 1, 4)) or "FILE"
+end
+
+local function drawFile(parent, name)
+	local page = box({ Position = UDim2.fromOffset(48, 10), Size = UDim2.fromOffset(60, 92), BackgroundColor3 = WHITE }, parent)
+	stroke(page, EDGE, 2)
+	box({ Position = UDim2.fromOffset(8, 10), Size = UDim2.fromOffset(44, 3), BackgroundColor3 = TINT2 }, page)
+	box({ Position = UDim2.fromOffset(8, 18), Size = UDim2.fromOffset(32, 3), BackgroundColor3 = TINT2 }, page)
+	box({ Position = UDim2.fromOffset(8, 26), Size = UDim2.fromOffset(38, 3), BackgroundColor3 = TINT2 }, page)
+	local tag = box({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 56), Size = UDim2.fromOffset(48, 22), BackgroundColor3 = BROWN }, page)
+	label({ Size = UDim2.fromScale(1, 1), Text = extOf(name), TextSize = 14, Font = Enum.Font.SourceSansBold, TextColor3 = WHITE }, tag)
+end
+
+---------------------------------------------------------------------
+-- แสดงรายการ
+---------------------------------------------------------------------
+local render
+
+local function collectAll(node, out)
+	for _, k in ipairs(node.kids or {}) do
+		table.insert(out, { node = k, parent = node })
+		if k.kids then collectAll(k, out) end
+	end
+	return out
+end
+
+local function openFolder(item)
+	if query ~= "" then
+		query = ""
+		searchBox.Text = ""
+		path = { root }
+	end
+	table.insert(path, item)
+	render()
+end
+
+local function editItem(entry)
+	local item = entry.node
+	if item.t == "f" then
+		folderDialog(item, function(name, icon)
+			item.name, item.icon = name, icon
+			markDirty()
+			render()
+		end)
+	else
+		fileDialog(item, function(name, text)
+			item.name, item.content = name, text
+			markDirty()
+			render()
+			toast("บันทึกไฟล์แล้ว")
+		end)
+	end
+end
+
+local function deleteItem(entry)
+	confirmDialog("ลบ “" .. entry.node.name .. "” ?" .. (entry.node.t == "f" and "\nของที่อยู่ข้างในจะหายทั้งหมด" or ""), function()
+		local idx = table.find(entry.parent.kids, entry.node)
+		if idx then table.remove(entry.parent.kids, idx) end
+		markDirty()
+		render()
+	end)
+end
+
+local function makeCard(entry, order)
+	local item = entry.node
+	local card = make("TextButton", { LayoutOrder = order, BackgroundTransparency = 1, BorderSizePixel = 0, Text = "", AutoButtonColor = false }, scroll)
+	local inner = box({ Size = UDim2.fromScale(1, 1), BackgroundColor3 = TINT, BackgroundTransparency = 1 }, card)
+
+	if item.t == "f" then drawFolder(inner, item.icon) else drawFile(inner, item.name) end
+
+	label({
+		Position = UDim2.fromOffset(6, 118), Size = UDim2.new(1, -12, 0, 26), Text = item.name,
+		TextSize = 17, Font = Enum.Font.SourceSansSemibold, TextTruncate = Enum.TextTruncate.AtEnd,
+	}, inner)
+
+	local edit = button(inner, "แก้", UDim2.fromOffset(30, 22), UDim2.new(1, -68, 0, 4), WHITE, TINT2, BROWN)
+	local del = button(inner, "ลบ", UDim2.fromOffset(30, 22), UDim2.new(1, -34, 0, 4), WHITE, TINT2, BROWN)
+	edit.TextSize, del.TextSize = 14, 14
+	stroke(edit, LINE, 1)
+	stroke(del, LINE, 1)
+
+	card.MouseEnter:Connect(function()
+		tween(inner, 0.12, { BackgroundTransparency = 0, Position = UDim2.fromOffset(0, -3) })
+	end)
+	card.MouseLeave:Connect(function()
+		tween(inner, 0.12, { BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 0) })
+	end)
+	card.MouseButton1Click:Connect(function()
+		if item.t == "f" then openFolder(item) else editItem(entry) end
+	end)
+	edit.MouseButton1Click:Connect(function() editItem(entry) end)
+	del.MouseButton1Click:Connect(function() deleteItem(entry) end)
+end
+
+function render()
+	for _, c in ipairs(scroll:GetChildren()) do
+		if c:IsA("GuiObject") then c:Destroy() end
+	end
+
+	local cur = path[#path]
+	local entries = {}
+	if query ~= "" then
+		local q = string.lower(query)
+		for _, e in ipairs(collectAll(root, {})) do
+			if string.find(string.lower(e.node.name), q, 1, true) then table.insert(entries, e) end
+		end
+		crumb.Text = "ผลการค้นหา: " .. query
+	else
+		for _, k in ipairs(cur.kids) do table.insert(entries, { node = k, parent = cur }) end
+		local names = {}
+		for _, p in ipairs(path) do table.insert(names, p.name) end
+		crumb.Text = table.concat(names, "  >  ")
+	end
+
+	backBtn.Visible = (#path > 1 and query == "")
+	crumb.Position = backBtn.Visible and UDim2.fromOffset(54, 0) or UDim2.fromOffset(14, 0)
+
+	local order = 0
+	for _, e in ipairs(entries) do
+		if e.node.t == "f" then order += 1 makeCard(e, order) end
+	end
+	for _, e in ipairs(entries) do
+		if e.node.t ~= "f" then order += 1 makeCard(e, order) end
+	end
+
+	if #entries == 0 then
+		if query ~= "" then
+			emptyLabel.Text = "ไม่พบสิ่งที่ค้นหา"
+		elseif #path == 1 then
+			emptyLabel.Text = "ยังไม่มีแฟ้ม\nกด “+ เพิ่ม” เพื่อสร้างแฟ้มแรก"
+		else
+			emptyLabel.Text = "แฟ้มนี้ยังว่างอยู่\nกด “+ เพิ่ม” เพื่อใส่แฟ้มหรือไฟล์"
+		end
+		emptyLabel.Visible = true
+	else
+		emptyLabel.Visible = false
+	end
+end
+
+---------------------------------------------------------------------
+-- ปุ่มเพิ่ม
+---------------------------------------------------------------------
+local function newFolderIn(cur)
+	folderDialog(nil, function(name, icon)
+		table.insert(cur.kids, { t = "f", name = name, icon = icon, kids = {} })
+		markDirty()
+		render()
+	end)
+end
+
+local function newFileIn(cur)
+	fileDialog(nil, function(name, text)
+		table.insert(cur.kids, { t = "d", name = name, content = text })
+		markDirty()
+		render()
+		toast("สร้างไฟล์แล้ว")
+	end)
+end
+
+addBtn.MouseButton1Click:Connect(function()
+	local cur = path[#path]
+	if #path == 1 then
+		-- ชั้นบนสุด: เพิ่มได้แต่แฟ้ม
+		newFolderIn(cur)
+		return
+	end
+	local panel = openModal("เพิ่มลงใน “" .. cur.name .. "”", 360, 170)
+	local a = button(panel, "📁   แฟ้มใหม่", UDim2.new(1, -28, 0, 44), UDim2.fromOffset(14, 50), TINT, TINT2, BROWN)
+	local b = button(panel, "📄   ไฟล์ใหม่ (txt ฯลฯ)", UDim2.new(1, -28, 0, 44), UDim2.fromOffset(14, 104), TINT, TINT2, BROWN)
+	a.TextSize, b.TextSize = 18, 18
+	stroke(a, LINE, 1)
+	stroke(b, LINE, 1)
+	a.MouseButton1Click:Connect(function() newFolderIn(cur) end)
+	b.MouseButton1Click:Connect(function() newFileIn(cur) end)
+end)
+
+backBtn.MouseButton1Click:Connect(function()
+	if #path > 1 then
+		table.remove(path)
+		render()
+	end
+end)
+
+searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+	query = trim(searchBox.Text)
+	render()
+end)
+
+---------------------------------------------------------------------
+-- เปิด/ปิดหน้าต่าง
+---------------------------------------------------------------------
+local function setOpen(v)
+	win.Visible = v
+	launcher.Visible = not v
+	if not v then
+		closeModal()
+		flush()
+	end
+end
+
+closeBtn.MouseButton1Click:Connect(function() setOpen(false) end)
+launcher.MouseButton1Click:Connect(function() setOpen(true) end)
+UIS.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == Enum.KeyCode.F then setOpen(not win.Visible) end
+end)
+
+render()
+
+---------------------------------------------------------------------
+-- โหลดข้อมูลที่เคยเซฟไว้ (ถ้ามี Script เซฟฝั่งเซิร์ฟเวอร์)
+---------------------------------------------------------------------
+if not USE_SERVER_SAVE then
+	setStatus("โหมดในเกม: ข้อมูลอยู่จนกว่าจะออกเกม", TINT2)
+	return
+end
+
+task.spawn(function()
+	local r = ReplicatedStorage:WaitForChild("FileManagerRemote", 6)
+	if not r then
+		setStatus("ออฟไลน์: ยังไม่ได้เชื่อมระบบเซฟ", Color3.fromRGB(255, 190, 150))
+		return
+	end
+	setStatus("กำลังโหลด…")
+	local ok, loadedOk, data = pcall(function() return r:InvokeServer("load") end)
+	if not (ok and loadedOk) then
+		setStatus("โหลดข้อมูลไม่สำเร็จ (ไม่เซฟทับของเดิม)", Color3.fromRGB(255, 190, 150))
+		return
+	end
+	remote = r
+	canSave = true
+	if type(data) == "string" and data ~= "" then
+		local decoded
+		local okJson = pcall(function() decoded = HttpService:JSONDecode(data) end)
+		if okJson and type(decoded) == "table" then
+			local kids = {}
+			for _, k in ipairs(decoded) do
+				local c = clean(k, 1)
+				if c and c.t == "f" then table.insert(kids, c) end -- ชั้นบนสุดมีได้แต่แฟ้ม
+			end
+			root.kids = kids
+			path = { root }
+			render()
+		end
+	end
+	setStatus("● บันทึกอัตโนมัติ", Color3.fromRGB(190, 230, 140))
+end)
