@@ -1,6 +1,6 @@
 -- LocalScript
 -- วางที่: StarterPlayer > StarterPlayerScripts
--- กด F เพื่อเปิด/ปิด หรือกดปุ่ม รูปแฟ้มสีเหลือง มุมซ้ายล่างตอนปิดหน้าต่าง
+-- กด F เพื่อเปิด/ปิด หรือกดปุ่ม 📁 มุมซ้ายล่างตอนปิดหน้าต่าง
 -- ถ้ามี FileManagerSaver (Script ฝั่งเซิร์ฟเวอร์) จะเซฟอัตโนมัติ ถ้าไม่มีจะใช้ได้แค่ตอนอยู่ในเกม
 
 local Players = game:GetService("Players")
@@ -29,30 +29,9 @@ local FOLDER  = Color3.fromRGB(245, 207, 99)
 local FOLDER2 = Color3.fromRGB(251, 227, 143)
 local EDGE    = Color3.fromRGB(214, 170, 70)
 
-local ICONS = { "", "flash", "house", "folder", "star", "gamepad", "music", "picture", "briefcase", "lock", "cloud", "box", "key", "trophy", "heart", "camera" }
-
--- ไอคอนวาดเองด้วยพิกเซลสี่เหลี่ยม ใช้เฉพาะโทนเหลือง (D = เหลืองทอง, M = เหลือง, L = เหลืองอ่อน)
-local PIX = {
-	D = Color3.fromRGB(205, 155, 30),
-	M = Color3.fromRGB(247, 205, 70),
-	L = Color3.fromRGB(255, 236, 150),
-}
-local GLYPHS = {
-	folder = { "DDDDD.......", "DMMMMDDDDDD.", "DMMMMMMMMMMD", "DLLLLLLLLLLD", "DMMMMMMMMMMD", "DMMMMMMMMMMD", "DMMMMMMMMMMD", "DDDDDDDDDDDD" },
-	flash = { "...DDDDDD...", "...DLDDLD...", "...DDDDDD...", "...DDDDDD...", "..DDDDDDDD..", "..DMMMMMMD..", "..DMMMMMMD..", "..DMMLLMMD..", "..DMMLLMMD..", "..DMMMMMMD..", "..DMMMMMMD..", "..DDDDDDDD.." },
-	house = { ".....DD.....", "....DMMD....", "...DMMMMD...", "..DMMMMMMD..", ".DMMMMMMMMD.", "DDDDDDDDDDDD", ".DMMMMMMMMD.", ".DMLLMMDDMD.", ".DMLLMMDDMD.", ".DMMMMMDDMD.", ".DMMMMMDDMD.", ".DDDDDDDDDD." },
-	star = { ".....DD.....", ".....DD.....", "....DMMD....", "....DMMD....", "DDDDMMMMDDDD", ".DMMMMMMMMD.", "..DMMMMMMD..", "...DMMMMD...", "...DMMMMD...", "..DMMDDMMD..", "..DMD..DMD..", "..DD....DD.." },
-	gamepad = { ".DDDDDDDDDD.", "DMMMMMMMMMMD", "DMMDMMMMLMMD", "DMDDDMMLMLMD", "DMMDMMMMLMMD", "DMMMMMMMMMMD", "DMMMMDDMMMMD", ".DDDD..DDDD." },
-	music = { "....DDDDDD..", "....DMMMMD..", "....DM..DM..", "....DM..DM..", "....DM..DM..", "....DM..DM..", "..DDDM.DDDM.", ".DMMMD.DMMMD", ".DMMMD.DMMMD", "..DDD...DDD." },
-	picture = { ".DDDDDDDDDD.", ".DLLLLLLLLD.", ".DLLLLLMMLD.", ".DLLLLLMMLD.", ".DLLDLLLLLD.", ".DLDMDLLDLD.", ".DDMMMDDMDD.", ".DMMMMMMMMD.", ".DDDDDDDDDD." },
-	briefcase = { "....DDDD....", "....D..D....", ".DDDDDDDDDD.", ".DMMMMMMMMD.", ".DMMMMMMMMD.", ".DDDDLLDDDD.", ".DMMMLLMMMD.", ".DMMMMMMMMD.", ".DMMMMMMMMD.", ".DDDDDDDDDD." },
-	lock = { "...DDDDDD...", "..DD....DD..", "..D......D..", "..D......D..", ".DDDDDDDDDD.", ".DMMMMMMMMD.", ".DMMMDDMMMD.", ".DMMMDDMMMD.", ".DMMMMMMMMD.", ".DMMMMMMMMD.", ".DDDDDDDDDD." },
-	cloud = { "....DDDD....", "...DMMMMD...", "..DMMMMMMDDD", ".DDMMMMMMMMD", "DMMMMMMMMMMD", "DMMMMMMMMMMD", ".DDDDDDDDDD." },
-	box = { "DDDDDDDDDDDD", "DLLLLLLLLLLD", "DDDDDDDDDDDD", ".DMMMDDMMMD.", ".DMMMDDMMMD.", ".DMMMDDMMMD.", ".DMMMDDMMMD.", ".DMMMDDMMMD.", ".DDDDDDDDDD." },
-	key = { ".DDDD.......", "DMMMMD......", "DM..MD......", "DM..MD......", "DMMMMDDDDDDD", ".DDDDMMMMMMD", ".....DDDMDMD", "........D.D." },
-	trophy = { ".DDDDDDDDDD.", "DDMMMMMMMMDD", "DMDMMLLMMDMD", "DMDMMLMMMDMD", "DDDMMMMMMDDD", "..DMMMMMMD..", "...DMMMMD...", "....DMMD....", "....DMMD....", "...DDDDDD...", "..DMMMMMMD..", "..DDDDDDDD.." },
-	heart = { ".DDD....DDD.", "DMMMD..DMMMD", "DMLMMDDMMMMD", "DMLMMMMMMMMD", "DMMMMMMMMMMD", ".DMMMMMMMMD.", "..DMMMMMMD..", "...DMMMMD...", "....DMMD....", ".....DD....." },
-	camera = { "...DDDD.....", "DDDDDDDDDDDD", "DMMMMMMMMMMD", "DMMMDDDDMMMD", "DMMDLLLLDMMD", "DMMDLLLLDMMD", "DMMMDDDDMMMD", "DMMMMMMMMMMD", "DDDDDDDDDDDD" },
+local ICONS = {
+	"", "💾", "🏠", "📁", "⭐", "🎮", "🎵", "🖼️", "💼", "🔒",
+	"☁️", "📦", "🔧", "❤️", "🚀", "📷", "🎒", "🔑", "🏆", "⚙️",
 }
 
 ---------------------------------------------------------------------
@@ -135,38 +114,6 @@ local function textField(parent, pos, size, placeholder, text)
 	tb.Focused:Connect(function() s.Color = BROWN end)
 	tb.FocusLost:Connect(function() s.Color = LINE end)
 	return tb
-end
-
--- วาดไอคอนพิกเซลสี่เหลี่ยม (รวมช่องสีเดียวกันในแถวให้เหลือชิ้นเดียว)
-local function drawGlyph(parent, key, size, cx, cy)
-	local rows = GLYPHS[key]
-	if not rows then return end
-	local cell = math.max(1, math.floor(size / 12))
-	local total = cell * 12
-	local holder = box({
-		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(cx, cy),
-		Size = UDim2.fromOffset(total, total), BackgroundTransparency = 1,
-	}, parent)
-	local top = math.floor((12 - #rows) / 2)
-	for r, row in ipairs(rows) do
-		local c = 1
-		while c <= 12 do
-			local ch = string.sub(row, c, c)
-			local col = PIX[ch]
-			if col then
-				local e = c
-				while e < 12 and string.sub(row, e + 1, e + 1) == ch do e += 1 end
-				box({
-					Position = UDim2.fromOffset((c - 1) * cell, (top + r - 1) * cell),
-					Size = UDim2.fromOffset((e - c + 1) * cell, cell), BackgroundColor3 = col,
-				}, holder)
-				c = e + 1
-			else
-				c += 1
-			end
-		end
-	end
-	return holder
 end
 
 ---------------------------------------------------------------------
@@ -279,8 +226,8 @@ local function toast(msg)
 end
 
 -- ปุ่มเปิดหน้าต่างเมื่อปิดอยู่
-local launcher = button(gui, "", UDim2.fromOffset(48, 48), UDim2.new(0, 16, 1, -64), BROWN, DARK, FOLDER)
-drawGlyph(launcher, "folder", 36, 24, 24)
+local launcher = button(gui, "📁", UDim2.fromOffset(48, 48), UDim2.new(0, 16, 1, -64), BROWN, DARK, FOLDER)
+launcher.TextSize = 26
 launcher.Visible = false
 stroke(launcher, FOLDER, 2)
 
@@ -326,7 +273,7 @@ local function flush()
 		return remote:InvokeServer("save", HttpService:JSONEncode(root.kids))
 	end)
 	if ok and res then
-		setStatus("บันทึกแล้ว", Color3.fromRGB(190, 230, 140))
+		setStatus("● บันทึกแล้ว", Color3.fromRGB(190, 230, 140))
 	else
 		dirty = true
 		setStatus("บันทึกไม่สำเร็จ ลองใหม่…", Color3.fromRGB(255, 190, 150))
@@ -432,7 +379,7 @@ local function folderDialog(existing, onDone)
 		BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 4,
 		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	}, panel)
-	make("UIGridLayout", { CellSize = UDim2.fromOffset(40, 40), CellPadding = UDim2.fromOffset(4, 4), SortOrder = Enum.SortOrder.LayoutOrder }, grid)
+	make("UIGridLayout", { CellSize = UDim2.fromOffset(36, 36), CellPadding = UDim2.fromOffset(4, 4), SortOrder = Enum.SortOrder.LayoutOrder }, grid)
 
 	local btns = {}
 	local function refresh()
@@ -443,11 +390,10 @@ local function folderDialog(existing, onDone)
 	for i, ic in ipairs(ICONS) do
 		local b = make("TextButton", {
 			LayoutOrder = i, BackgroundColor3 = TINT, BorderSizePixel = 0,
-			Text = (ic == "") and "–" or "", TextSize = 22, TextColor3 = INK,
+			Text = (ic == "") and "–" or ic, TextSize = 22, TextColor3 = INK,
 			Font = Enum.Font.SourceSans, AutoButtonColor = false,
 		}, grid)
 		btns[ic] = b
-		if ic ~= "" then drawGlyph(b, ic, 36, 20, 20) end
 		b.MouseButton1Click:Connect(function()
 			chosen = ic
 			idBox.Text = ""
@@ -528,8 +474,11 @@ local function drawIcon(parent, icon, size, cx, cy)
 			AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(cx, cy), Size = UDim2.fromOffset(size, size),
 			BackgroundTransparency = 1, BorderSizePixel = 0, Image = icon, ScaleType = Enum.ScaleType.Fit,
 		}, parent)
-	elseif GLYPHS[icon] then
-		drawGlyph(parent, icon, size, cx, cy)
+	else
+		label({
+			AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(cx, cy), Size = UDim2.fromOffset(size + 10, size + 10),
+			Text = icon, TextSize = size,
+		}, parent)
 	end
 end
 
@@ -540,7 +489,7 @@ local function drawFolder(parent, icon)
 	stroke(back, EDGE, 1.5)
 	local front = box({ Position = UDim2.fromOffset(18, 40), Size = UDim2.fromOffset(120, 74), BackgroundColor3 = FOLDER2 }, parent)
 	stroke(front, EDGE, 1.5)
-	drawIcon(parent, icon, 48, 78, 79)
+	drawIcon(parent, icon, 38, 78, 78)
 end
 
 local function extOf(name)
@@ -712,8 +661,8 @@ addBtn.MouseButton1Click:Connect(function()
 		return
 	end
 	local panel = openModal("เพิ่มลงใน “" .. cur.name .. "”", 360, 170)
-	local a = button(panel, "แฟ้มใหม่", UDim2.new(1, -28, 0, 44), UDim2.fromOffset(14, 50), TINT, TINT2, BROWN)
-	local b = button(panel, "ไฟล์ใหม่ (txt ฯลฯ)", UDim2.new(1, -28, 0, 44), UDim2.fromOffset(14, 104), TINT, TINT2, BROWN)
+	local a = button(panel, "📁   แฟ้มใหม่", UDim2.new(1, -28, 0, 44), UDim2.fromOffset(14, 50), TINT, TINT2, BROWN)
+	local b = button(panel, "📄   ไฟล์ใหม่ (txt ฯลฯ)", UDim2.new(1, -28, 0, 44), UDim2.fromOffset(14, 104), TINT, TINT2, BROWN)
 	a.TextSize, b.TextSize = 18, 18
 	stroke(a, LINE, 1)
 	stroke(b, LINE, 1)
@@ -790,5 +739,5 @@ task.spawn(function()
 			render()
 		end
 	end
-	setStatus("บันทึกอัตโนมัติ", Color3.fromRGB(190, 230, 140))
+	setStatus("● บันทึกอัตโนมัติ", Color3.fromRGB(190, 230, 140))
 end)
