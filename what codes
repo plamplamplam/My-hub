@@ -1,10 +1,13 @@
 -- MortyArchive : LocalScript
--- วางไว้ที่ StarterPlayer > StarterPlayerScripts
+-- วางไว้ที่ StarterPlayer > StarterPlayerScripts (ต้องใช้คู่กับ MortyArchiveSave ใน ServerScriptService)
 -- ธีม Evil Morty (โลโก้ผ้าปิดตา + ฟอนต์ Code) แต่สีเหลืองล้วน โปร่งใส ไม่มีดำ/ขาว/น้ำตาล
 -- เหลี่ยมทั้งหมด, ไอคอนวาดเองด้วย Frame
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
 local player = Players.LocalPlayer
 
 ------------------------------------------------------------ palette
@@ -114,13 +117,27 @@ local root = { name = "ROOT", kind = "folder", children = {} }
 local path = { root }
 local deleteMode = false
 
+-- ระบบเซฟ (คุยกับสคริปต์ MortyArchiveSave ใน ServerScriptService)
+local loadFn = ReplicatedStorage:WaitForChild("MortyArchiveLoad", 10)
+local saveEv = ReplicatedStorage:WaitForChild("MortyArchiveSave", 10)
+local canSave = false
+local saveToken = 0
+local function queueSave()
+	if not canSave or not saveEv then return end
+	saveToken += 1
+	local t = saveToken
+	task.delay(1, function()
+		if t == saveToken then saveEv:FireServer(root.children) end
+	end)
+end
+
 ------------------------------------------------------------ gui
 local gui = mk("ScreenGui", {
 	Name = "MortyArchive", ResetOnSpawn = false, IgnoreGuiInset = true,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 }, player:WaitForChild("PlayerGui"))
 
-local W, H = 440, 260
+local W, H = 440, 290
 local win = mk("Frame", {
 	Size = UDim2.fromOffset(W, H), Position = UDim2.new(.5, -W / 2, .5, -H / 2),
 	BackgroundColor3 = C.panel, BackgroundTransparency = .3,
@@ -176,7 +193,7 @@ end)
 
 -- toolbar
 local tool = mk("Frame", {
-	Position = UDim2.fromOffset(0, 36), Size = UDim2.new(1, 0, 0, 34),
+	Position = UDim2.fromOffset(0, 66), Size = UDim2.new(1, 0, 0, 34),
 	BackgroundTransparency = 1,
 }, win)
 local backB   = btn(tool, "< BACK", 8, 4, 56, 26)
@@ -191,7 +208,7 @@ local folderB = btn(tool, "+ FOLDER", -124, 4, 80, 26, true)
 
 -- content
 local content = mk("Frame", {
-	Position = UDim2.fromOffset(8, 74), Size = UDim2.new(1, -16, 1, -82),
+	Position = UDim2.fromOffset(8, 104), Size = UDim2.new(1, -16, 1, -112),
 	BackgroundColor3 = C.panel2, BackgroundTransparency = .5, BorderSizePixel = 0,
 	ClipsDescendants = true,
 }, win)
@@ -242,7 +259,9 @@ closeE.Position = UDim2.new(1, -8, 1, -6)
 closeE.ZIndex = 5
 
 local editing
-box.FocusLost:Connect(function() if editing then editing.content = box.Text end end)
+box.FocusLost:Connect(function()
+	if editing then editing.content = box.Text; queueSave() end
+end)
 copyB.Activated:Connect(function()
 	if not editing then return end
 	editing.content = box.Text
@@ -254,7 +273,7 @@ copyB.Activated:Connect(function()
 	task.delay(1.2, function() copyB.Text = "COPY" end)
 end)
 closeE.Activated:Connect(function()
-	if editing then editing.content = box.Text end
+	if editing then editing.content = box.Text; queueSave() end
 	editing = nil
 	editor.Visible = false
 end)
@@ -344,7 +363,10 @@ noB.Activated:Connect(function() dialog.Visible = false end)
 okB.Activated:Connect(function()
 	local trimmed = (nameBox.Text:gsub("^%s+", ""))
 	trimmed = (trimmed:gsub("%s+$", ""))
-	local name = string.sub(trimmed, 1, 24)
+	local name = trimmed
+	if utf8.len(name) and utf8.len(name) > 24 then
+		name = string.sub(name, 1, utf8.offset(name, 25) - 1)
+	end
 	if name == "" then name = "UNTITLED" end
 	local cur = path[#path]
 	if pendingKind == "folder" then
@@ -353,6 +375,7 @@ okB.Activated:Connect(function()
 		table.insert(cur.children, { kind = "file", name = name, icon = "file", content = "" })
 	end
 	dialog.Visible = false
+	queueSave()
 	render()
 end)
 
@@ -396,6 +419,7 @@ function render()
 		it.Activated:Connect(function()
 			if deleteMode then
 				table.remove(cur.children, idx)
+				queueSave()
 				render()
 			elseif node.kind == "folder" then
 				table.insert(path, node)
@@ -415,3 +439,316 @@ fileB.Activated:Connect(function() if #path > 1 then openDialog("file") end end)
 delB.Activated:Connect(function() deleteMode = not deleteMode; render() end)
 
 render()
+
+------------------------------------------------------------ แท็บ + MODS (ฝั่ง client ล้วน ไม่เซฟ)
+local tabs = mk("Frame", {
+	Position = UDim2.fromOffset(8, 36), Size = UDim2.new(1, -16, 0, 26),
+	BackgroundTransparency = 1,
+}, win)
+local tabFiles = btn(tabs, "FILES", 0, 0, 110, 26)
+local tabMods  = btn(tabs, "MODS", 116, 0, 110, 26)
+
+local modsPage = mk("ScrollingFrame", {
+	Position = UDim2.fromOffset(8, 66), Size = UDim2.new(1, -16, 1, -74),
+	BackgroundColor3 = C.panel2, BackgroundTransparency = .5, BorderSizePixel = 0,
+	ScrollBarThickness = 4, ScrollBarImageColor3 = C.yellowDim, Visible = false,
+	CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+}, win)
+stroke(modsPage, C.yellowDim, 1)
+mk("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }, modsPage)
+mk("UIPadding", {
+	PaddingLeft = UDim.new(0, 4), PaddingTop = UDim.new(0, 4),
+	PaddingRight = UDim.new(0, 8), PaddingBottom = UDim.new(0, 4),
+}, modsPage)
+
+local function showTab(name)
+	local files = (name == "files")
+	tool.Visible = files
+	content.Visible = files
+	modsPage.Visible = not files
+	dialog.Visible = false
+	tabFiles.BackgroundColor3 = files and C.yellow or C.btn
+	tabMods.BackgroundColor3 = files and C.btn or C.yellow
+end
+tabFiles.Activated:Connect(function() showTab("files") end)
+tabMods.Activated:Connect(function() showTab("mods") end)
+
+-- ตัวช่วยจัดการตัวละคร / การเชื่อมต่อ
+local base = setmetatable({}, { __mode = "k" })
+local function getHum()
+	local c = player.Character
+	local h = c and c:FindFirstChildOfClass("Humanoid")
+	if h and not base[h] then -- จำค่าเดิมก่อนแก้อะไรทั้งหมด
+		base[h] = {
+			ws = h.WalkSpeed, jp = h.JumpPower, jh = h.JumpHeight,
+			ujp = h.UseJumpPower, hip = h.HipHeight, slope = h.MaxSlopeAngle,
+		}
+	end
+	return h, h and base[h]
+end
+local function getRoot()
+	local c = player.Character
+	return c and c:FindFirstChild("HumanoidRootPart")
+end
+local conns = {}
+local function bind(key, signal, fn)
+	if not conns[key] then conns[key] = signal:Connect(fn) end
+end
+local function unbind(key)
+	if conns[key] then conns[key]:Disconnect(); conns[key] = nil end
+end
+
+local origGravity = workspace.Gravity
+local origFov = workspace.CurrentCamera.FieldOfView
+local origZoom = player.CameraMaxZoomDistance
+local origClock = Lighting.ClockTime
+local origLight
+local flySpeed, fovValue, clockValue = 60, 100, 14
+local espObjs, espConns, espAdded = {}, {}, nil
+
+local function espFor(plr)
+	if plr == player then return end
+	local function onChar(c)
+		if espObjs[plr] then espObjs[plr]:Destroy() end
+		local hl = Instance.new("Highlight")
+		hl.FillColor = C.yellow
+		hl.OutlineColor = C.yellowDim
+		hl.FillTransparency = .6
+		hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		hl.Parent = c
+		espObjs[plr] = hl
+	end
+	if plr.Character then onChar(plr.Character) end
+	espConns[plr] = plr.CharacterAdded:Connect(onChar)
+end
+
+-- apply() เรียกซ้ำได้ (ตอนเปลี่ยนค่า / เกิดใหม่), revert() คืนค่าเดิม
+local MODS = {
+	{ name = "SPEED", value = 50, min = 0, max = 1000, respawn = true,
+		apply = function(v) local h = getHum(); if h then h.WalkSpeed = v end end,
+		revert = function() local h, b = getHum(); if h then h.WalkSpeed = b.ws end end },
+
+	{ name = "JUMP POWER", value = 100, min = 0, max = 1000, respawn = true,
+		apply = function(v) local h = getHum(); if h then h.UseJumpPower = true; h.JumpPower = v end end,
+		revert = function()
+			local h, b = getHum()
+			if h then h.UseJumpPower = b.ujp; h.JumpPower = b.jp; h.JumpHeight = b.jh end
+		end },
+
+	{ name = "GRAVITY", value = 50, min = 0, max = 500,
+		apply = function(v) workspace.Gravity = v end,
+		revert = function() workspace.Gravity = origGravity end },
+
+	{ name = "INFINITE JUMP",
+		apply = function()
+			bind("inf", UIS.JumpRequest, function()
+				local h = getHum()
+				if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end
+			end)
+		end,
+		revert = function() unbind("inf") end },
+
+	{ name = "FLY", value = 60, min = 1, max = 500,
+		apply = function(v)
+			flySpeed = v
+			bind("fly", RunService.Heartbeat, function()
+				local h, r = getHum(), getRoot()
+				if not h or not r then return end
+				h.PlatformStand = true
+				local cf = workspace.CurrentCamera.CFrame
+				local look = Vector3.new(cf.LookVector.X, 0, cf.LookVector.Z)
+				local dir = Vector3.zero
+				local md = h.MoveDirection
+				if look.Magnitude > 0 and md.Magnitude > 0 then
+					look = look.Unit
+					local right = Vector3.new(cf.RightVector.X, 0, cf.RightVector.Z).Unit
+					dir = cf.LookVector * md:Dot(look) + cf.RightVector * md:Dot(right)
+				end
+				if UIS:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.yAxis end
+				if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then dir -= Vector3.yAxis end
+				r.AssemblyLinearVelocity = dir * flySpeed
+			end)
+		end,
+		revert = function()
+			unbind("fly")
+			local h = getHum()
+			if h then h.PlatformStand = false end
+		end },
+
+	{ name = "NOCLIP",
+		apply = function()
+			bind("noclip", RunService.Stepped, function()
+				local c = player.Character
+				if not c then return end
+				for _, part in ipairs(c:GetDescendants()) do
+					if part:IsA("BasePart") then part.CanCollide = false end
+				end
+			end)
+		end,
+		revert = function()
+			unbind("noclip")
+			local c = player.Character
+			if not c then return end
+			for _, n in ipairs({ "HumanoidRootPart", "Head", "UpperTorso", "LowerTorso", "Torso" }) do
+				local part = c:FindFirstChild(n)
+				if part then part.CanCollide = true end
+			end
+		end },
+
+	{ name = "HIP HEIGHT", value = 6, min = -10, max = 100, respawn = true,
+		apply = function(v) local h = getHum(); if h then h.HipHeight = v end end,
+		revert = function() local h, b = getHum(); if h then h.HipHeight = b.hip end end },
+
+	{ name = "MAX SLOPE", value = 89, min = 0, max = 89, respawn = true,
+		apply = function(v) local h = getHum(); if h then h.MaxSlopeAngle = v end end,
+		revert = function() local h, b = getHum(); if h then h.MaxSlopeAngle = b.slope end end },
+
+	{ name = "FOV", value = 100, min = 30, max = 120,
+		apply = function(v)
+			fovValue = v
+			bind("fov", RunService.RenderStepped, function()
+				workspace.CurrentCamera.FieldOfView = fovValue
+			end)
+		end,
+		revert = function()
+			unbind("fov")
+			workspace.CurrentCamera.FieldOfView = origFov
+		end },
+
+	{ name = "MAX ZOOM", value = 500, min = 10, max = 10000,
+		apply = function(v) player.CameraMaxZoomDistance = v end,
+		revert = function() player.CameraMaxZoomDistance = origZoom end },
+
+	{ name = "FULLBRIGHT",
+		apply = function()
+			if not origLight then
+				origLight = {
+					Brightness = Lighting.Brightness, Ambient = Lighting.Ambient,
+					OutdoorAmbient = Lighting.OutdoorAmbient,
+					GlobalShadows = Lighting.GlobalShadows, FogEnd = Lighting.FogEnd,
+				}
+			end
+			Lighting.Brightness = 3
+			Lighting.Ambient = Color3.fromRGB(200, 200, 200)
+			Lighting.OutdoorAmbient = Color3.fromRGB(200, 200, 200)
+			Lighting.GlobalShadows = false
+			Lighting.FogEnd = 1e6
+		end,
+		revert = function()
+			if origLight then
+				for k, v in pairs(origLight) do Lighting[k] = v end
+				origLight = nil
+			end
+		end },
+
+	{ name = "TIME OF DAY", value = 14, min = 0, max = 24,
+		apply = function(v)
+			clockValue = v
+			bind("time", RunService.RenderStepped, function() Lighting.ClockTime = clockValue end)
+		end,
+		revert = function()
+			unbind("time")
+			Lighting.ClockTime = origClock
+		end },
+
+	{ name = "PLAYER ESP",
+		apply = function()
+			if espAdded then return end
+			for _, p in ipairs(Players:GetPlayers()) do espFor(p) end
+			espAdded = Players.PlayerAdded:Connect(espFor)
+		end,
+		revert = function()
+			if espAdded then espAdded:Disconnect(); espAdded = nil end
+			for _, c in pairs(espConns) do c:Disconnect() end
+			table.clear(espConns)
+			for _, hl in pairs(espObjs) do hl:Destroy() end
+			table.clear(espObjs)
+		end },
+}
+
+local states = {}
+for i, def in ipairs(MODS) do
+	local st = { on = false, value = def.value }
+	states[def] = st
+
+	local row = mk("Frame", {
+		Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = C.field,
+		BackgroundTransparency = .25, BorderSizePixel = 0, LayoutOrder = i,
+	}, modsPage)
+	stroke(row, C.yellowDim, 1)
+
+	local nl = label(row, def.name, 13, C.text)
+	nl.Position = UDim2.fromOffset(8, 0)
+	nl.Size = UDim2.new(1, -140, 1, 0)
+	nl.TextXAlignment = Enum.TextXAlignment.Left
+
+	local sw = mk("TextButton", {
+		Text = "", AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -8, .5, 0),
+		Size = UDim2.fromOffset(44, 22), BackgroundColor3 = C.btn, BorderSizePixel = 0,
+	}, row)
+	stroke(sw, C.yellowDim, 1)
+	local knob = mk("Frame", {
+		Size = UDim2.fromOffset(16, 16), Position = UDim2.fromOffset(3, 3),
+		BackgroundColor3 = C.yellowDim, BorderSizePixel = 0,
+	}, sw)
+	local function paint()
+		sw.BackgroundColor3 = st.on and C.yellow or C.btn
+		knob.Position = st.on and UDim2.fromOffset(25, 3) or UDim2.fromOffset(3, 3)
+		knob.BackgroundColor3 = st.on and C.text or C.yellowDim
+	end
+
+	if def.value then
+		local vb = mk("TextBox", {
+			Text = tostring(def.value), AnchorPoint = Vector2.new(1, .5),
+			Position = UDim2.new(1, -60, .5, 0), Size = UDim2.fromOffset(60, 22),
+			BackgroundColor3 = C.btn, BorderSizePixel = 0,
+			Font = Enum.Font.Code, TextSize = 13, TextColor3 = C.text,
+			ClearTextOnFocus = false,
+		}, row)
+		stroke(vb, C.yellowDim, 1)
+		vb.FocusLost:Connect(function()
+			local n = tonumber(vb.Text)
+			if n then
+				n = math.clamp(n, def.min, def.max)
+				st.value = n
+				if st.on then def.apply(n) end
+			end
+			vb.Text = tostring(st.value)
+		end)
+	end
+
+	sw.Activated:Connect(function()
+		st.on = not st.on
+		if st.on then def.apply(st.value) else def.revert() end
+		paint()
+	end)
+end
+
+-- เกิดใหม่แล้วใส่ค่าที่เปิดไว้กลับให้
+player.CharacterAdded:Connect(function(c)
+	c:WaitForChild("Humanoid")
+	task.wait(.1)
+	for def, st in pairs(states) do
+		if st.on and def.respawn then def.apply(st.value) end
+	end
+end)
+
+showTab("files")
+
+-- โหลดข้อมูลที่เซฟไว้ (ถ้าโหลดไม่ได้ จะไม่เซฟทับของเดิม)
+title.Text = "MORTY // LOADING..."
+task.spawn(function()
+	local ok, res = false, nil
+	if loadFn then
+		ok, res = pcall(function() return loadFn:InvokeServer() end)
+	end
+	if ok and type(res) == "table" and res.ok then
+		root.children = res.data or {}
+		path = { root }
+		canSave = true
+		title.Text = "MORTY // ARCHIVE"
+		render()
+	else
+		title.Text = "MORTY // ARCHIVE (NO SAVE)"
+	end
+end)
